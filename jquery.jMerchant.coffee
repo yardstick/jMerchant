@@ -123,10 +123,11 @@
       @processor.validatePayload()
 
       $.ajax
-        url: @processor.paymentUrl
-        type: 'GET',
-        dataType: 'jsonp',
+        url: this.processor.paymentUrl
+        type: 'GET'
         data: payload
+        dataType: 'jsonp'
+        jsonpCallback: 'callback'
 
   $.jMerchant = (merchantName) ->
     new jMerchant(merchantName)
