@@ -1,52 +1,11 @@
 (($) ->
-  $.fn.serializeObject = ->
-      result = {}
-      inputArr = @serializeArray()
-
-      for input in inputArr
-        name = $.camelCase(input.name)
-        value = result[name]
-
-        if value
-          if $.isArray(value)
-            value.push(input.value)
-          else
-            result[name] = [
-              result[name],
-              input.value
-            ]
-        else
-          result[name] = input.value
-
-      result
-)(jQuery)
-
-(($) ->
-  $.fn.creditCardInfoForNum = (number) ->
-    normalize = (number) ->
-      number.toString().replace(/[ -]/g, '')
-
-    cardTypes = [
-      { name: 'amex',          type: '003', pattern: /^3[47]/ }
-      { name: 'jcb',           type: '007', pattern: /^35(2[89]|[3-8][0-9])/ }
-      { name: 'visa_electron', type: '033', pattern: /^(4026|417500|4508|4844|491(3|7))/ }
-      { name: 'visa',          type: '001', pattern: /^4/ }
-      { name: 'mastercard',    type: '002', pattern: /^5[1-5]/ }
-      { name: 'discover',      type: '004', pattern: /^(6011|622(12[6-9]|1[3-9][0-9]|[2-8][0-9]{2}|9[0-1][0-9]|92[0-5]|64[4-9])|65)/ }
-    ]
-
-    for cardType in cardTypes
-      if normalize(number).match(cardType.pattern)
-        return name: cardType.name, type: cardType.type
-
-      null
-)(jQuery)
-
-(($) ->
   class PaymentProcessor
     constructor: ->
       @pl = {}
       @requiredPayloadKeys = []
+
+    generatePayload: (payload) ->
+      $.extend({}, payload) # removes keys with undefined values
 
     validatePayload: ->
       for key in @requiredPayloadKeys
@@ -54,7 +13,6 @@
 
   class JetPay extends PaymentProcessor
     constructor: (testMode) ->
-      @requestType = 'get'
       @paymentUrl = if testMode
         'https://testapp1.jetpay.com/jetdirect/post/cc/process_cc.php'
       else
@@ -62,10 +20,28 @@
 
       super()
 
+    sendPayment: (callbacks) ->
+      opts =
+        url: @paymentUrl
+        type: 'GET'
+        data: @merchantPayload
+        dataType: 'jsonp'
+        jsonpCallback: 'callback'
+
+      $.ajax(opts)
+        .done (resp) ->
+          if resp.approved
+            callbacks.approved(resp)
+          else
+            callbacks.declined(resp)
+        .fail (resp) ->
+          callbacks.declined(resp)
+          console.error('Payment request failed unexpectedly.')
+
     generatePayload: (paymentInfo) ->
       @populateOptionalFields(paymentInfo)
       @populateRequiredFields(paymentInfo)
-      @pl
+      @merchantPayload = super(@pl)
 
     populateOptionalFields: (paymentInfo) ->
       @pl.customerEmail   = paymentInfo.customerEmail
@@ -134,15 +110,22 @@
       @paymentUrl = if testMode
         'https://testsecureacceptance.cybersource.com/silent/pay'
       else
-        # needs production URL
-        'https://testsecureacceptance.cybersource.com/silent/pay'
+        'https://secureacceptance.cybersource.com/silent/pay'
 
       super()
+
+    sendPayment: ->
+      inputs = ("<input name='#{key}' value='#{value}'>" for key, value of @merchantPayload).join()
+      $form  = $("<form action='#{@paymentUrl}' method='POST' style='visibility: hidden; position: absolute; height: 0;' >#{inputs}</form>")
+
+      $form.appendTo('body').submit()
+
+      undefined
 
     generatePayload: (paymentInfo) ->
       @populateOptionalFields(paymentInfo)
       @populateRequiredFields(paymentInfo)
-      @pl
+      @merchantPayload = @orderFields(super(@pl))
 
     populateOptionalFields: (paymentInfo) ->
       if paymentInfo.bill_to_forename or paymentInfo.bill_to_surname
@@ -177,10 +160,8 @@
       @pl.ignore_cvn                       = paymentInfo.ignore_cvn
       @pl.journey_type                     = paymentInfo.journey_type
       @pl.line_item_count                  = paymentInfo.line_item_count
-      @pl.merchant_secure_data1            = paymentInfo.merchant_secure_data1
-      @pl.merchant_secure_data2            = paymentInfo.merchant_secure_data2
-      @pl.merchant_secure_data3            = paymentInfo.merchant_secure_data3
-      @pl.merchant_secure_data4            = paymentInfo.merchant_secure_data4
+      @pl.override_backoffice_post_url     = paymentInfo.override_backoffice_post_url
+      @pl.override_custom_cancel_page      = paymentInfo.override_custom_cancel_page
       @pl.override_custom_receipt_page     = paymentInfo.override_custom_receipt_page
       @pl.payment_method                   = paymentInfo.payment_method
       @pl.payment_token                    = paymentInfo.payment_token
@@ -211,7 +192,12 @@
       @pl['item_#_unit_price']             = paymentInfo['item_#_unit_price']
       @pl['journey_leg#_dest']             = paymentInfo['journey_leg#_dest']
       @pl['journey_leg#_orig']             = paymentInfo['journey_leg#_orig']
-      @pl['merchant_defined_data#']        = paymentInfo['merchant_defined_data#']
+
+      for n in [1..5]
+        @pl["merchant_secure_data#{n}"] = paymentInfo["merchant_secure_data#{n}"]
+
+      for n in [1..100]
+        @pl["merchant_defined_data#{n}"] = paymentInfo["merchant_defined_data#{n}"]
 
     populateRequiredFields: (paymentInfo) ->
       @pl.access_key           = paymentInfo.access_key
@@ -227,6 +213,16 @@
       @pl.signed_field_names   = paymentInfo.signed_field_names
       @pl.unsigned_field_names = paymentInfo.unsigned_field_names
       @pl.allow_payment_token_update = paymentInfo.allow_payment_token_update
+
+    orderFields: (payload) ->
+      _.tap {}, (merchantPayload) =>
+        for field in payload.signed_field_names.split(',')
+          merchantPayload[field] = payload[field]
+
+        for field in payload.unsigned_field_names.split(',')
+          merchantPayload[field] = payload[field]
+
+        merchantPayload['signature'] = payload['signature']
 
     validatePayload: ->
       @requiredPayloadKeys = [
@@ -248,23 +244,76 @@
 
       @processor = new PaymentProcessors[merchantName](testMode)
 
-    generatePayload: (paymentInfo) ->
-      payload = @processor.generatePayload(paymentInfo)
-      $.extend({}, payload) # removes keys with undefined values
-
-    sendPayment: (paymentInfo) ->
-      payload = @generatePayload(paymentInfo)
-
+    sendPayment: (paymentInfo, callbacks) ->
+      @processor.generatePayload(paymentInfo)
       @processor.validatePayload()
-
-      $.ajax
-        url: @processor.paymentUrl
-        type: @processor.requestType
-        data: payload
-        dataType: 'jsonp'
-        jsonpCallback: 'callback'
+      @processor.sendPayment(callbacks)
 
   $.jMerchant = (merchantName, testMode) ->
     new jMerchant(merchantName, testMode)
+)(jQuery)
 
+(($) ->
+  $.fn.serializeObject = ->
+      result = {}
+      inputArr = @serializeArray()
+
+      for input in inputArr
+        name = $.camelCase(input.name)
+        value = result[name]
+
+        if value
+          if $.isArray(value)
+            value.push(input.value)
+          else
+            result[name] = [
+              result[name],
+              input.value
+            ]
+        else
+          result[name] = input.value
+
+      result
+)(jQuery)
+
+(($) ->
+  $.fn.creditCardInfoForNum = (number) ->
+    normalize = (number) ->
+      number.toString().replace(/[ -]/g, '')
+
+    cardTypes = [
+      { name: 'amex',          type: '003', pattern: /^3[47]/ }
+      { name: 'jcb',           type: '007', pattern: /^35(2[89]|[3-8][0-9])/ }
+      { name: 'visa_electron', type: '033', pattern: /^(4026|417500|4508|4844|491(3|7))/ }
+      { name: 'visa',          type: '001', pattern: /^4/ }
+      { name: 'mastercard',    type: '002', pattern: /^5[1-5]/ }
+      { name: 'discover',      type: '004', pattern: /^(6011|622(12[6-9]|1[3-9][0-9]|[2-8][0-9]{2}|9[0-1][0-9]|92[0-5]|64[4-9])|65)/ }
+    ]
+
+    for cardType in cardTypes
+      if normalize(number).match(cardType.pattern)
+        return name: cardType.name, type: cardType.type
+
+      null
+)(jQuery)
+
+(($) ->
+  $.fn.obj = (number) ->
+    normalize = (number) ->
+      number.toString().replace(/[ -]/g, '')
+
+    cardTypes = [
+      { name: 'amex',          type: '003', pattern: /^3[47]/ }
+      { name: 'jcb',           type: '007', pattern: /^35(2[89]|[3-8][0-9])/ }
+      { name: 'visa_electron', type: '033', pattern: /^(4026|417500|4508|4844|491(3|7))/ }
+      { name: 'visa',          type: '001', pattern: /^4/ }
+      { name: 'mastercard',    type: '002', pattern: /^5[1-5]/ }
+      { name: 'discover',      type: '004', pattern: /^(6011|622(12[6-9]|1[3-9][0-9]|[2-8][0-9]{2}|9[0-1][0-9]|92[0-5]|64[4-9])|65)/ }
+    ]
+
+    for cardType in cardTypes
+      if normalize(number).match(cardType.pattern)
+        return name: cardType.name, type: cardType.type
+
+      null
 )(jQuery)

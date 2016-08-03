@@ -5,6 +5,301 @@
     indexOf = [].indexOf || function(item) { for (var i = 0, l = this.length; i < l; i++) { if (i in this && this[i] === item) return i; } return -1; };
 
   (function($) {
+    var CyberSource, JetPay, PaymentProcessor, jMerchant;
+    PaymentProcessor = (function() {
+      function PaymentProcessor() {
+        this.pl = {};
+        this.requiredPayloadKeys = [];
+      }
+
+      PaymentProcessor.prototype.generatePayload = function(payload) {
+        return $.extend({}, payload);
+      };
+
+      PaymentProcessor.prototype.validatePayload = function() {
+        var i, key, len, ref, results;
+        ref = this.requiredPayloadKeys;
+        results = [];
+        for (i = 0, len = ref.length; i < len; i++) {
+          key = ref[i];
+          results.push(this.pl[key] || $.error("Payment Validation Error: Missing " + key));
+        }
+        return results;
+      };
+
+      return PaymentProcessor;
+
+    })();
+    JetPay = (function(superClass) {
+      extend(JetPay, superClass);
+
+      function JetPay(testMode) {
+        this.paymentUrl = testMode ? 'https://testapp1.jetpay.com/jetdirect/post/cc/process_cc.php' : 'https://extapp01.jetpay.com/jetdirect/post/cc/process_cc.php';
+        JetPay.__super__.constructor.call(this);
+      }
+
+      JetPay.prototype.sendPayment = function(callbacks) {
+        var opts;
+        opts = {
+          url: this.paymentUrl,
+          type: 'GET',
+          data: this.merchantPayload,
+          dataType: 'jsonp',
+          jsonpCallback: 'callback'
+        };
+        return $.ajax(opts).done(function(resp) {
+          if (resp.approved) {
+            return callbacks.approved(resp);
+          } else {
+            return callbacks.declined(resp);
+          }
+        }).fail(function(resp) {
+          callbacks.declined(resp);
+          return console.error('Payment request failed unexpectedly.');
+        });
+      };
+
+      JetPay.prototype.generatePayload = function(paymentInfo) {
+        this.populateOptionalFields(paymentInfo);
+        this.populateRequiredFields(paymentInfo);
+        return this.merchantPayload = JetPay.__super__.generatePayload.call(this, this.pl);
+      };
+
+      JetPay.prototype.populateOptionalFields = function(paymentInfo) {
+        this.pl.customerEmail = paymentInfo.customerEmail;
+        this.pl.billingAddress1 = paymentInfo.billingAddress1;
+        this.pl.billingAddress2 = paymentInfo.billingAddress2;
+        this.pl.billingCity = paymentInfo.billingCity;
+        this.pl.billingState = paymentInfo.billingState;
+        this.pl.billingCountry = paymentInfo.billingCountry;
+        this.pl.ud1 = paymentInfo.ud1;
+        this.pl.ud2 = paymentInfo.ud2;
+        this.pl.ud3 = paymentInfo.ud3;
+        this.pl.merData0 = paymentInfo.merData0;
+        this.pl.merData1 = paymentInfo.merData1;
+        this.pl.merData2 = paymentInfo.merData2;
+        this.pl.merData3 = paymentInfo.merData3;
+        this.pl.merData4 = paymentInfo.merData4;
+        this.pl.merData5 = paymentInfo.merData5;
+        this.pl.merData6 = paymentInfo.merData6;
+        this.pl.merData7 = paymentInfo.merData7;
+        this.pl.merData8 = paymentInfo.merData8;
+        return this.pl.merData9 = paymentInfo.merData9;
+      };
+
+      JetPay.prototype.populateRequiredFields = function(paymentInfo) {
+        this.pl.fName = paymentInfo.firstName;
+        this.pl.lName = paymentInfo.lastName;
+        this.pl.name = paymentInfo.name;
+        this.pl.cardNum = paymentInfo.cardNum;
+        this.pl.expMo = paymentInfo.cardExpMo;
+        this.pl.expYr = ("" + paymentInfo.cardExpYr).slice(-2);
+        this.pl.cvv = paymentInfo.cardCvv;
+        this.pl.amount = paymentInfo.amount;
+        this.pl.billingZip = paymentInfo.billingZip;
+        this.pl.cid = paymentInfo.cid;
+        this.pl.jp_tid = paymentInfo.jp_tid;
+        this.pl.jp_key = paymentInfo.jp_key;
+        this.pl.jp_request_hash = paymentInfo.jp_request_hash;
+        this.pl.order_number = paymentInfo.order_number;
+        this.pl.trans_type = paymentInfo.trans_type;
+        this.pl.retUrl = paymentInfo.retUrl;
+        this.pl.decUrl = paymentInfo.decUrl;
+        return this.pl.dataUrl = paymentInfo.dataUrl;
+      };
+
+      JetPay.prototype.validatePayload = function() {
+        this.requiredPayloadKeys = ['cardNum', 'expMo', 'expYr', 'cvv', 'amount', 'billingZip', 'cid', 'jp_tid', 'jp_key', 'jp_request_hash', 'order_number', 'trans_type', 'retUrl', 'decUrl', 'dataUrl'];
+        if (this.pl.name && (this.pl.fName || this.pl.lName)) {
+          $.error('Payment Validation Error: JetPay requires a name or a first/last name, but not both.');
+        }
+        return JetPay.__super__.validatePayload.call(this);
+      };
+
+      return JetPay;
+
+    })(PaymentProcessor);
+    CyberSource = (function(superClass) {
+      extend(CyberSource, superClass);
+
+      function CyberSource(testMode) {
+        this.requestType = 'post';
+        this.paymentUrl = testMode ? 'https://testsecureacceptance.cybersource.com/silent/pay' : 'https://secureacceptance.cybersource.com/silent/pay';
+        CyberSource.__super__.constructor.call(this);
+      }
+
+      CyberSource.prototype.sendPayment = function() {
+        var $form, inputs, key, value;
+        inputs = ((function() {
+          var ref, results;
+          ref = this.merchantPayload;
+          results = [];
+          for (key in ref) {
+            value = ref[key];
+            results.push("<input name='" + key + "' value='" + value + "'>");
+          }
+          return results;
+        }).call(this)).join();
+        $form = $("<form action='" + this.paymentUrl + "' method='POST' style='visibility: hidden; position: absolute; height: 0;' >" + inputs + "</form>");
+        $form.appendTo('body').submit();
+        return void 0;
+      };
+
+      CyberSource.prototype.generatePayload = function(paymentInfo) {
+        this.populateOptionalFields(paymentInfo);
+        this.populateRequiredFields(paymentInfo);
+        return this.merchantPayload = this.orderFields(CyberSource.__super__.generatePayload.call(this, this.pl));
+      };
+
+      CyberSource.prototype.populateOptionalFields = function(paymentInfo) {
+        var firstName, i, j, lastName, n, ref, ref1, results;
+        if (paymentInfo.bill_to_forename || paymentInfo.bill_to_surname) {
+          ref = [paymentInfo.bill_to_forename, paymentInfo.bill_to_surname], firstName = ref[0], lastName = ref[1];
+        } else {
+          ref1 = paymentInfo.name.split(' '), firstName = ref1[0], lastName = ref1[1];
+        }
+        this.pl.card_type = $.fn.creditCardInfoForNum(paymentInfo.cardNum).type;
+        this.pl.card_number = paymentInfo.cardNum;
+        this.pl.card_expiry_date = paymentInfo.cardExpMo + "-" + paymentInfo.cardExpYr;
+        this.pl.card_cvn = paymentInfo.cardCvv;
+        this.pl.bill_to_forename = firstName;
+        this.pl.bill_to_surname = lastName;
+        this.pl.bill_to_company_name = paymentInfo.bill_to_company_name;
+        this.pl.bill_to_address_line1 = paymentInfo.bill_to_address_line1;
+        this.pl.bill_to_address_line2 = paymentInfo.bill_to_address_line2;
+        this.pl.bill_to_address_city = paymentInfo.bill_to_address_city;
+        this.pl.bill_to_address_state = paymentInfo.bill_to_address_state;
+        this.pl.bill_to_address_country = paymentInfo.bill_to_address_country;
+        this.pl.bill_to_address_postal_code = paymentInfo.billingZip;
+        this.pl.bill_to_email = paymentInfo.bill_to_email;
+        this.pl.bill_to_phone = paymentInfo.bill_to_phone;
+        this.pl.complete_route = paymentInfo.complete_route;
+        this.pl.consumer_id = paymentInfo.consumer_id;
+        this.pl.customer_cookies_accepted = paymentInfo.customer_cookies_accepted;
+        this.pl.customer_gift_wrap = paymentInfo.customer_gift_wrap;
+        this.pl.customer_ip_address = paymentInfo.customer_ip_address;
+        this.pl.date_of_birth = paymentInfo.date_of_birth;
+        this.pl.departure_time = paymentInfo.departure_time;
+        this.pl.device_fingerprint_id = paymentInfo.device_fingerprint_id;
+        this.pl.ignore_avs = paymentInfo.ignore_avs;
+        this.pl.ignore_cvn = paymentInfo.ignore_cvn;
+        this.pl.journey_type = paymentInfo.journey_type;
+        this.pl.line_item_count = paymentInfo.line_item_count;
+        this.pl.override_backoffice_post_url = paymentInfo.override_backoffice_post_url;
+        this.pl.override_custom_cancel_page = paymentInfo.override_custom_cancel_page;
+        this.pl.override_custom_receipt_page = paymentInfo.override_custom_receipt_page;
+        this.pl.payment_method = paymentInfo.payment_method;
+        this.pl.payment_token = paymentInfo.payment_token;
+        this.pl.payment_token_comments = paymentInfo.payment_token_comments;
+        this.pl.payment_token_title = paymentInfo.payment_token_title;
+        this.pl.recurring_amount = paymentInfo.recurring_amount;
+        this.pl.recurring_frequency = paymentInfo.recurring_frequency;
+        this.pl.recurring_start_date = paymentInfo.recurring_start_date;
+        this.pl.recurring_number_of_installments = paymentInfo.recurring_number_of_installments;
+        this.pl.returns_accepted = paymentInfo.returns_accepted;
+        this.pl.ship_to_address_city = paymentInfo.ship_to_address_city;
+        this.pl.ship_to_address_country = paymentInfo.ship_to_address_country;
+        this.pl.ship_to_address_line1 = paymentInfo.ship_to_address_line1;
+        this.pl.ship_to_address_line2 = paymentInfo.ship_to_address_line2;
+        this.pl.ship_to_address_postal_code = paymentInfo.ship_to_address_postal_code;
+        this.pl.ship_to_address_state = paymentInfo.ship_to_address_state;
+        this.pl.ship_to_company_name = paymentInfo.ship_to_company_name;
+        this.pl.ship_to_forename = paymentInfo.ship_to_forename;
+        this.pl.ship_to_phone = paymentInfo.ship_to_phone;
+        this.pl.ship_to_surname = paymentInfo.ship_to_surname;
+        this.pl.shipping_method = paymentInfo.shipping_method;
+        this.pl.skip_decision_manager = paymentInfo.skip_decision_manager;
+        this.pl.tax_amount = paymentInfo.tax_amount;
+        this.pl['item_#_code'] = paymentInfo['item_#_code'];
+        this.pl['item_#_quantity'] = paymentInfo['item_#_quantity'];
+        this.pl['item_#_sku'] = paymentInfo['item_#_sku'];
+        this.pl['item_#_tax_amount'] = paymentInfo['item_#_tax_amount'];
+        this.pl['item_#_unit_price'] = paymentInfo['item_#_unit_price'];
+        this.pl['journey_leg#_dest'] = paymentInfo['journey_leg#_dest'];
+        this.pl['journey_leg#_orig'] = paymentInfo['journey_leg#_orig'];
+        for (n = i = 1; i <= 5; n = ++i) {
+          this.pl["merchant_secure_data" + n] = paymentInfo["merchant_secure_data" + n];
+        }
+        results = [];
+        for (n = j = 1; j <= 100; n = ++j) {
+          results.push(this.pl["merchant_defined_data" + n] = paymentInfo["merchant_defined_data" + n]);
+        }
+        return results;
+      };
+
+      CyberSource.prototype.populateRequiredFields = function(paymentInfo) {
+        this.pl.access_key = paymentInfo.access_key;
+        this.pl.profile_id = paymentInfo.profile_id;
+        this.pl.signature = paymentInfo.signature;
+        this.pl.reference_number = paymentInfo.order_number;
+        this.pl.transaction_uuid = paymentInfo.transaction_uuid;
+        this.pl.amount = paymentInfo.amount;
+        this.pl.currency = paymentInfo.currency;
+        this.pl.locale = paymentInfo.locale;
+        this.pl.transaction_type = paymentInfo.transaction_type;
+        this.pl.signed_date_time = paymentInfo.signed_date_time;
+        this.pl.signed_field_names = paymentInfo.signed_field_names;
+        this.pl.unsigned_field_names = paymentInfo.unsigned_field_names;
+        return this.pl.allow_payment_token_update = paymentInfo.allow_payment_token_update;
+      };
+
+      CyberSource.prototype.orderFields = function(payload) {
+        return _.tap({}, (function(_this) {
+          return function(merchantPayload) {
+            var field, i, j, len, len1, ref, ref1;
+            ref = payload.signed_field_names.split(',');
+            for (i = 0, len = ref.length; i < len; i++) {
+              field = ref[i];
+              merchantPayload[field] = payload[field];
+            }
+            ref1 = payload.unsigned_field_names.split(',');
+            for (j = 0, len1 = ref1.length; j < len1; j++) {
+              field = ref1[j];
+              merchantPayload[field] = payload[field];
+            }
+            return merchantPayload['signature'] = payload['signature'];
+          };
+        })(this));
+      };
+
+      CyberSource.prototype.validatePayload = function() {
+        this.requiredPayloadKeys = ['access_key', 'profile_id', 'signature', 'amount', 'currency', 'locale', 'reference_number', 'transaction_type', 'transaction_uuid', 'signed_date_time', 'signed_field_names', 'unsigned_field_names'];
+        return CyberSource.__super__.validatePayload.call(this);
+      };
+
+      return CyberSource;
+
+    })(PaymentProcessor);
+    jMerchant = (function() {
+      var PaymentProcessors;
+
+      PaymentProcessors = {
+        'JetPay': JetPay,
+        'CyberSource': CyberSource
+      };
+
+      function jMerchant(merchantName, testMode) {
+        if (indexOf.call(Object.keys(PaymentProcessors), merchantName) < 0) {
+          $.error(merchantName + " is not a supported merchant");
+        }
+        this.processor = new PaymentProcessors[merchantName](testMode);
+      }
+
+      jMerchant.prototype.sendPayment = function(paymentInfo, callbacks) {
+        this.processor.generatePayload(paymentInfo);
+        this.processor.validatePayload();
+        return this.processor.sendPayment(callbacks);
+      };
+
+      return jMerchant;
+
+    })();
+    return $.jMerchant = function(merchantName, testMode) {
+      return new jMerchant(merchantName, testMode);
+    };
+  })(jQuery);
+
+  (function($) {
     return $.fn.serializeObject = function() {
       var i, input, inputArr, len, name, result, value;
       result = {};
@@ -74,245 +369,48 @@
   })(jQuery);
 
   (function($) {
-    var CyberSource, JetPay, PaymentProcessor, jMerchant;
-    PaymentProcessor = (function() {
-      function PaymentProcessor() {
-        this.pl = {};
-        this.requiredPayloadKeys = [];
-      }
-
-      PaymentProcessor.prototype.validatePayload = function() {
-        var i, key, len, ref, results;
-        ref = this.requiredPayloadKeys;
-        results = [];
-        for (i = 0, len = ref.length; i < len; i++) {
-          key = ref[i];
-          results.push(this.pl[key] || $.error("Payment Validation Error: Missing " + key));
+    return $.fn.obj = function(number) {
+      var cardType, cardTypes, i, len, normalize;
+      normalize = function(number) {
+        return number.toString().replace(/[ -]/g, '');
+      };
+      cardTypes = [
+        {
+          name: 'amex',
+          type: '003',
+          pattern: /^3[47]/
+        }, {
+          name: 'jcb',
+          type: '007',
+          pattern: /^35(2[89]|[3-8][0-9])/
+        }, {
+          name: 'visa_electron',
+          type: '033',
+          pattern: /^(4026|417500|4508|4844|491(3|7))/
+        }, {
+          name: 'visa',
+          type: '001',
+          pattern: /^4/
+        }, {
+          name: 'mastercard',
+          type: '002',
+          pattern: /^5[1-5]/
+        }, {
+          name: 'discover',
+          type: '004',
+          pattern: /^(6011|622(12[6-9]|1[3-9][0-9]|[2-8][0-9]{2}|9[0-1][0-9]|92[0-5]|64[4-9])|65)/
         }
-        return results;
-      };
-
-      return PaymentProcessor;
-
-    })();
-    JetPay = (function(superClass) {
-      extend(JetPay, superClass);
-
-      function JetPay(testMode) {
-        this.requestType = 'get';
-        this.paymentUrl = testMode ? 'https://testapp1.jetpay.com/jetdirect/post/cc/process_cc.php' : 'https://extapp01.jetpay.com/jetdirect/post/cc/process_cc.php';
-        JetPay.__super__.constructor.call(this);
-      }
-
-      JetPay.prototype.generatePayload = function(paymentInfo) {
-        this.populateOptionalFields(paymentInfo);
-        this.populateRequiredFields(paymentInfo);
-        return this.pl;
-      };
-
-      JetPay.prototype.populateOptionalFields = function(paymentInfo) {
-        this.pl.customerEmail = paymentInfo.customerEmail;
-        this.pl.billingAddress1 = paymentInfo.billingAddress1;
-        this.pl.billingAddress2 = paymentInfo.billingAddress2;
-        this.pl.billingCity = paymentInfo.billingCity;
-        this.pl.billingState = paymentInfo.billingState;
-        this.pl.billingCountry = paymentInfo.billingCountry;
-        this.pl.ud1 = paymentInfo.ud1;
-        this.pl.ud2 = paymentInfo.ud2;
-        this.pl.ud3 = paymentInfo.ud3;
-        this.pl.merData0 = paymentInfo.merData0;
-        this.pl.merData1 = paymentInfo.merData1;
-        this.pl.merData2 = paymentInfo.merData2;
-        this.pl.merData3 = paymentInfo.merData3;
-        this.pl.merData4 = paymentInfo.merData4;
-        this.pl.merData5 = paymentInfo.merData5;
-        this.pl.merData6 = paymentInfo.merData6;
-        this.pl.merData7 = paymentInfo.merData7;
-        this.pl.merData8 = paymentInfo.merData8;
-        return this.pl.merData9 = paymentInfo.merData9;
-      };
-
-      JetPay.prototype.populateRequiredFields = function(paymentInfo) {
-        this.pl.fName = paymentInfo.firstName;
-        this.pl.lName = paymentInfo.lastName;
-        this.pl.name = paymentInfo.name;
-        this.pl.cardNum = paymentInfo.cardNum;
-        this.pl.expMo = paymentInfo.cardExpMo;
-        this.pl.expYr = ("" + paymentInfo.cardExpYr).slice(-2);
-        this.pl.cvv = paymentInfo.cardCvv;
-        this.pl.amount = paymentInfo.amount;
-        this.pl.billingZip = paymentInfo.billingZip;
-        this.pl.cid = paymentInfo.cid;
-        this.pl.jp_tid = paymentInfo.jp_tid;
-        this.pl.jp_key = paymentInfo.jp_key;
-        this.pl.jp_request_hash = paymentInfo.jp_request_hash;
-        this.pl.order_number = paymentInfo.order_number;
-        this.pl.trans_type = paymentInfo.trans_type;
-        this.pl.retUrl = paymentInfo.retUrl;
-        this.pl.decUrl = paymentInfo.decUrl;
-        return this.pl.dataUrl = paymentInfo.dataUrl;
-      };
-
-      JetPay.prototype.validatePayload = function() {
-        this.requiredPayloadKeys = ['cardNum', 'expMo', 'expYr', 'cvv', 'amount', 'billingZip', 'cid', 'jp_tid', 'jp_key', 'jp_request_hash', 'order_number', 'trans_type', 'retUrl', 'decUrl', 'dataUrl'];
-        if (this.pl.name && (this.pl.fName || this.pl.lName)) {
-          $.error('Payment Validation Error: JetPay requires a name or a first/last name, but not both.');
+      ];
+      for (i = 0, len = cardTypes.length; i < len; i++) {
+        cardType = cardTypes[i];
+        if (normalize(number).match(cardType.pattern)) {
+          return {
+            name: cardType.name,
+            type: cardType.type
+          };
         }
-        return JetPay.__super__.validatePayload.call(this);
-      };
-
-      return JetPay;
-
-    })(PaymentProcessor);
-    CyberSource = (function(superClass) {
-      extend(CyberSource, superClass);
-
-      function CyberSource(testMode) {
-        this.requestType = 'post';
-        this.paymentUrl = testMode ? 'https://testsecureacceptance.cybersource.com/silent/pay' : 'https://testsecureacceptance.cybersource.com/silent/pay';
-        CyberSource.__super__.constructor.call(this);
+        null;
       }
-
-      CyberSource.prototype.generatePayload = function(paymentInfo) {
-        this.populateOptionalFields(paymentInfo);
-        this.populateRequiredFields(paymentInfo);
-        return this.pl;
-      };
-
-      CyberSource.prototype.populateOptionalFields = function(paymentInfo) {
-        var firstName, lastName, ref, ref1;
-        if (paymentInfo.bill_to_forename || paymentInfo.bill_to_surname) {
-          ref = [paymentInfo.bill_to_forename, paymentInfo.bill_to_surname], firstName = ref[0], lastName = ref[1];
-        } else {
-          ref1 = paymentInfo.name.split(' '), firstName = ref1[0], lastName = ref1[1];
-        }
-        this.pl.card_type = $.fn.creditCardInfoForNum(paymentInfo.cardNum).type;
-        this.pl.card_number = paymentInfo.cardNum;
-        this.pl.card_expiry_date = paymentInfo.cardExpMo + "-" + paymentInfo.cardExpYr;
-        this.pl.card_cvn = paymentInfo.cardCvv;
-        this.pl.bill_to_forename = firstName;
-        this.pl.bill_to_surname = lastName;
-        this.pl.bill_to_company_name = paymentInfo.bill_to_company_name;
-        this.pl.bill_to_address_line1 = paymentInfo.bill_to_address_line1;
-        this.pl.bill_to_address_line2 = paymentInfo.bill_to_address_line2;
-        this.pl.bill_to_address_city = paymentInfo.bill_to_address_city;
-        this.pl.bill_to_address_state = paymentInfo.bill_to_address_state;
-        this.pl.bill_to_address_country = paymentInfo.bill_to_address_country;
-        this.pl.bill_to_address_postal_code = paymentInfo.billingZip;
-        this.pl.bill_to_email = paymentInfo.bill_to_email;
-        this.pl.bill_to_phone = paymentInfo.bill_to_phone;
-        this.pl.complete_route = paymentInfo.complete_route;
-        this.pl.consumer_id = paymentInfo.consumer_id;
-        this.pl.customer_cookies_accepted = paymentInfo.customer_cookies_accepted;
-        this.pl.customer_gift_wrap = paymentInfo.customer_gift_wrap;
-        this.pl.customer_ip_address = paymentInfo.customer_ip_address;
-        this.pl.date_of_birth = paymentInfo.date_of_birth;
-        this.pl.departure_time = paymentInfo.departure_time;
-        this.pl.device_fingerprint_id = paymentInfo.device_fingerprint_id;
-        this.pl.ignore_avs = paymentInfo.ignore_avs;
-        this.pl.ignore_cvn = paymentInfo.ignore_cvn;
-        this.pl.journey_type = paymentInfo.journey_type;
-        this.pl.line_item_count = paymentInfo.line_item_count;
-        this.pl.merchant_secure_data1 = paymentInfo.merchant_secure_data1;
-        this.pl.merchant_secure_data2 = paymentInfo.merchant_secure_data2;
-        this.pl.merchant_secure_data3 = paymentInfo.merchant_secure_data3;
-        this.pl.merchant_secure_data4 = paymentInfo.merchant_secure_data4;
-        this.pl.override_custom_receipt_page = paymentInfo.override_custom_receipt_page;
-        this.pl.payment_method = paymentInfo.payment_method;
-        this.pl.payment_token = paymentInfo.payment_token;
-        this.pl.payment_token_comments = paymentInfo.payment_token_comments;
-        this.pl.payment_token_title = paymentInfo.payment_token_title;
-        this.pl.recurring_amount = paymentInfo.recurring_amount;
-        this.pl.recurring_frequency = paymentInfo.recurring_frequency;
-        this.pl.recurring_start_date = paymentInfo.recurring_start_date;
-        this.pl.recurring_number_of_installments = paymentInfo.recurring_number_of_installments;
-        this.pl.returns_accepted = paymentInfo.returns_accepted;
-        this.pl.ship_to_address_city = paymentInfo.ship_to_address_city;
-        this.pl.ship_to_address_country = paymentInfo.ship_to_address_country;
-        this.pl.ship_to_address_line1 = paymentInfo.ship_to_address_line1;
-        this.pl.ship_to_address_line2 = paymentInfo.ship_to_address_line2;
-        this.pl.ship_to_address_postal_code = paymentInfo.ship_to_address_postal_code;
-        this.pl.ship_to_address_state = paymentInfo.ship_to_address_state;
-        this.pl.ship_to_company_name = paymentInfo.ship_to_company_name;
-        this.pl.ship_to_forename = paymentInfo.ship_to_forename;
-        this.pl.ship_to_phone = paymentInfo.ship_to_phone;
-        this.pl.ship_to_surname = paymentInfo.ship_to_surname;
-        this.pl.shipping_method = paymentInfo.shipping_method;
-        this.pl.skip_decision_manager = paymentInfo.skip_decision_manager;
-        this.pl.tax_amount = paymentInfo.tax_amount;
-        this.pl['item_#_code'] = paymentInfo['item_#_code'];
-        this.pl['item_#_quantity'] = paymentInfo['item_#_quantity'];
-        this.pl['item_#_sku'] = paymentInfo['item_#_sku'];
-        this.pl['item_#_tax_amount'] = paymentInfo['item_#_tax_amount'];
-        this.pl['item_#_unit_price'] = paymentInfo['item_#_unit_price'];
-        this.pl['journey_leg#_dest'] = paymentInfo['journey_leg#_dest'];
-        this.pl['journey_leg#_orig'] = paymentInfo['journey_leg#_orig'];
-        return this.pl['merchant_defined_data#'] = paymentInfo['merchant_defined_data#'];
-      };
-
-      CyberSource.prototype.populateRequiredFields = function(paymentInfo) {
-        this.pl.access_key = paymentInfo.access_key;
-        this.pl.profile_id = paymentInfo.profile_id;
-        this.pl.signature = paymentInfo.signature;
-        this.pl.reference_number = paymentInfo.order_number;
-        this.pl.transaction_uuid = paymentInfo.transaction_uuid;
-        this.pl.amount = paymentInfo.amount;
-        this.pl.currency = paymentInfo.currency;
-        this.pl.locale = paymentInfo.locale;
-        this.pl.transaction_type = paymentInfo.transaction_type;
-        this.pl.signed_date_time = paymentInfo.signed_date_time;
-        this.pl.signed_field_names = paymentInfo.signed_field_names;
-        this.pl.unsigned_field_names = paymentInfo.unsigned_field_names;
-        return this.pl.allow_payment_token_update = paymentInfo.allow_payment_token_update;
-      };
-
-      CyberSource.prototype.validatePayload = function() {
-        this.requiredPayloadKeys = ['access_key', 'profile_id', 'signature', 'amount', 'currency', 'locale', 'reference_number', 'transaction_type', 'transaction_uuid', 'signed_date_time', 'signed_field_names', 'unsigned_field_names'];
-        return CyberSource.__super__.validatePayload.call(this);
-      };
-
-      return CyberSource;
-
-    })(PaymentProcessor);
-    jMerchant = (function() {
-      var PaymentProcessors;
-
-      PaymentProcessors = {
-        'JetPay': JetPay,
-        'CyberSource': CyberSource
-      };
-
-      function jMerchant(merchantName, testMode) {
-        if (indexOf.call(Object.keys(PaymentProcessors), merchantName) < 0) {
-          $.error(merchantName + " is not a supported merchant");
-        }
-        this.processor = new PaymentProcessors[merchantName](testMode);
-      }
-
-      jMerchant.prototype.generatePayload = function(paymentInfo) {
-        var payload;
-        payload = this.processor.generatePayload(paymentInfo);
-        return $.extend({}, payload);
-      };
-
-      jMerchant.prototype.sendPayment = function(paymentInfo) {
-        var payload;
-        payload = this.generatePayload(paymentInfo);
-        this.processor.validatePayload();
-        return $.ajax({
-          url: this.processor.paymentUrl,
-          type: this.processor.requestType,
-          data: payload,
-          dataType: 'jsonp',
-          jsonpCallback: 'callback'
-        });
-      };
-
-      return jMerchant;
-
-    })();
-    return $.jMerchant = function(merchantName, testMode) {
-      return new jMerchant(merchantName, testMode);
     };
   })(jQuery);
 
